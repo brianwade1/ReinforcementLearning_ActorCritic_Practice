@@ -8,13 +8,13 @@ Environment can be changed to other OpenAI environments that have a discrete out
 
 ## Python Libraries
 
-This simulation was built using the following python libraries and versions:
+This script was built using the following python libraries and versions:
 
-* Python v3.7.6
+* python v3.7.6
 * numpy v1.16.5
 * matplotlib v3.1.1
 * keras 2.3.1
-* gyn 0.15.3
+* gym 0.15.3
 
 ## References
 

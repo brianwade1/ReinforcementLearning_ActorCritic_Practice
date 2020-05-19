@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 
 import os
 import random
+import math
 from pathlib import Path
 
 import keras.backend as K
@@ -40,8 +41,8 @@ class ActorCriticAgent:
 
         self.epsilon = 1
         self.min_epsilon = 0.05
-        self.episode_start_epsilon_decay = 0.3 * self.max_episodes
-        self.episode_end_epsilon_decay = 0.8 * self.max_episodes
+        self.episode_start_epsilon_decay = math.floor(0.25 * self.max_episodes)
+        self.episode_end_epsilon_decay = math.floor(0.75 * self.max_episodes)
         self.epsilon_decay_value = self.epsilon/(self.episode_end_epsilon_decay - self.episode_start_epsilon_decay)
         
         self.actorFC1size = 128
@@ -216,7 +217,7 @@ class ActorCriticAgent:
         plt.legend(loc=2)
         plt.grid(True)
         plt.xlabel('Episodes')
-        plt.ylabel('reward')
+        plt.ylabel('Reward')
         plt.show()
 
 
