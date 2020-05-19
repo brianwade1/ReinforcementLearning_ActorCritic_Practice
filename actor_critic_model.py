@@ -40,8 +40,8 @@ class ActorCriticAgent:
 
         self.epsilon = 1
         self.min_epsilon = 0.05
-        self.episode_start_epsilon_decay = 0.1 * self.max_episodes
-        self.episode_end_epsilon_decay = 0.9 * self.max_episodes
+        self.episode_start_epsilon_decay = 0.3 * self.max_episodes
+        self.episode_end_epsilon_decay = 0.8 * self.max_episodes
         self.epsilon_decay_value = self.epsilon/(self.episode_end_epsilon_decay - self.episode_start_epsilon_decay)
         
         self.actorFC1size = 128
