@@ -1,0 +1,10 @@
+Environment: CartPole-v0
+
+Future reward discount factor (gamma): 0.95
+Number of training episodes: 1000
+Actor learning rate: 0.001
+Critic learning rate: 0.001
+Actor hiddel layer 1 size: 64
+Actor hiddel layer 2 size: 24
+Critic hiddel layer 1 size: 64
+Critic hiddel layer 2 size: 24

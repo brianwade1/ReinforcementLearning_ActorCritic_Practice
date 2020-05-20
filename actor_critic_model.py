@@ -23,6 +23,7 @@ class ActorCriticAgent:
     def __init__(self, env):
         
         self.env = env
+        self.env_name = self.env.unwrapped.spec.id
         self.action_size = env.action_space.n
         self.state_size = env.observation_space.shape[0]
         
@@ -30,26 +31,23 @@ class ActorCriticAgent:
         self.episode_rewards = []
         self.aggregate_episode_rewards = {'episode': [], 'avg_rewards': [], 'max_rewards': [], 'min_rewards': []}
 
-        self.aggregate_stats_interval = 10
-        self.show_stats_interval = self.aggregate_stats_interval
-        self.save_models_interval = 10
+        self.aggregate_stats_window = 10
+        self.show_stats_interval = 100
+        self.save_models_interval = 100
+
+        self.save_training_plot = True
 
         self.max_episodes = 1000
         
         self.gamma = 0.95 #discount rate for rewards
-        self.learning_rate = 0.0001
-
-        self.epsilon = 1
-        self.min_epsilon = 0.05
-        self.episode_start_epsilon_decay = math.floor(0.25 * self.max_episodes)
-        self.episode_end_epsilon_decay = math.floor(0.75 * self.max_episodes)
-        self.epsilon_decay_value = self.epsilon/(self.episode_end_epsilon_decay - self.episode_start_epsilon_decay)
+        self.learning_rate_actor = 0.001
+        self.learning_rate_critic = 0.005
         
-        self.actorFC1size = 128
-        self.actorFC2size = 64
+        self.actorFC1size = 64
+        self.actorFC2size = 24
 
-        self.criticStateFC1size = 128
-        self.criticStateFC2size = 64
+        self.criticStateFC1size = 64
+        self.criticStateFC2size = 24
                
         self.memory = []
 
@@ -58,10 +56,23 @@ class ActorCriticAgent:
         self.critic = self.create_critic_network()
 
         # create path to save model
-        self.model_name = '{}_ActorCritic_{}'.format(self.env.unwrapped.spec.id, self.learning_rate)
+        self.model_name = f'{self.env_name}_ActorCritic'
         self.save_path = os.path.join(Path(__file__).parent, 'Models', self.model_name)
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
+
+        # save parameters file for reference
+        parameter_file = os.path.join(self.save_path, 'parameters.txt')
+        with open(parameter_file, "w") as text_file:
+            print(f"Environment: {self.env_name}\n", file = text_file)
+            print(f"Future reward discount factor (gamma): {self.gamma}", file = text_file)
+            print(f"Number of training episodes: {self.max_episodes}", file = text_file)
+            print(f"Actor learning rate: {self.learning_rate_actor}", file = text_file)
+            print(f"Critic learning rate: {self.learning_rate_actor}", file = text_file)
+            print(f"Actor hiddel layer 1 size: {self.actorFC1size}", file = text_file)
+            print(f"Actor hiddel layer 2 size: {self.actorFC2size}", file = text_file)
+            print(f"Critic hiddel layer 1 size: {self.criticStateFC1size}", file = text_file)
+            print(f"Critic hiddel layer 2 size: {self.criticStateFC2size}", file = text_file)
 
     
     def create_actor_network(self):
@@ -72,7 +83,7 @@ class ActorCriticAgent:
         actor_output = Dense(self.action_size, activation = 'softmax')(actor_h2)
 
         model = Model(inputs = state_input, outputs = actor_output)
-        actor_optimizer = Adam(lr = self.learning_rate)
+        actor_optimizer = Adam(lr = self.learning_rate_actor)
         model.compile(optimizer = actor_optimizer, loss = 'categorical_crossentropy')
         
         return model
@@ -87,7 +98,7 @@ class ActorCriticAgent:
         critic_output = Dense(1, activation = 'linear')(critic_h2)
 
         model = Model(inputs = state_input, outputs = critic_output)
-        critic_optimizer = Adam(lr = self.learning_rate)
+        critic_optimizer = Adam(lr = self.learning_rate_critic)
         model.compile(optimizer = critic_optimizer, loss = 'mse')
         
         return model
@@ -142,8 +153,8 @@ class ActorCriticAgent:
 
         # Compute discounted reward
         discounted_rewards = self.discount_reward(rewards_from_memory)
-        discounted_rewards -= np.mean(discounted_rewards) # normalizing the result
-        discounted_rewards /= np.std(discounted_rewards) # divide by standard deviation
+        #discounted_rewards -= np.mean(discounted_rewards) # normalizing the result
+        #discounted_rewards /= np.std(discounted_rewards) # divide by standard deviation
 
         # Get critic predictions
         values = self.critic.predict(states)[:,0]
@@ -156,35 +167,28 @@ class ActorCriticAgent:
         self.critic.fit(states, discounted_rewards, epochs = 1, verbose = 0) 
 
         
-    def action(self, state, train):
+    def policy_action(self, state, train):
         '''Predict the next action to take with the actor network using the current policy'''
-        # Random draw vs. epsilon value. This encourages exploration.  Over time, epsilon will decrease to
-        # encourage expotation. 
-        if (random.random() < self.epsilon) and train:
-            # Random draw loss so choose a random action
-            action = np.random.choice(np.arange(self.action_size))
+
+        action_policy = self.actor.predict(state.reshape(1,self.state_size)).ravel()
+        if train:
+            action = np.random.choice(self.action_size, 1, p=action_policy)[0]
         else:
-            # Use the actor to predict the action probabilities 
-            # with the current state and then flatten to a single vector.
-            action_probabilities = self.actor.predict(state.reshape(1,self.state_size))
-            action = (np.argmax(action_probabilities))
+            action = np.argmax(action_policy)
+        
         return action
 
 
     def end_of_episode_actions(self, cumulative_reward):
-        ''' Update epsilon, reset memory, gather episode stats, show stats, and update episode number '''
+        ''' Reset memory, gather episode stats, show stats, and update episode number '''
         # increase episode counter and remember cumulative reward
         self.episode += 1
         self.episode_rewards.append(cumulative_reward)
-
-        # decrease epsilon (probability of random action)
-        if (self.epsilon > self.min_epsilon) and (self.episode_end_epsilon_decay > self.episode > self.episode_start_epsilon_decay):
-            self.epsilon -= self.epsilon_decay_value
         
         # store aggregate results
-        if (not self.episode % self.aggregate_stats_interval) or (self.episode == self.max_episodes):
+        if (not self.episode % self.aggregate_stats_window) or (self.episode == self.max_episodes):
             # Find average, min, and max rewards over teh aggregate window
-            reward_set = self.episode_rewards[-self.aggregate_stats_interval:]
+            reward_set = self.episode_rewards[-self.aggregate_stats_window:]
             average_reward = sum(reward_set)/len(reward_set)
             min_reward = min(reward_set)
             max_reward = max(reward_set)
@@ -195,7 +199,7 @@ class ActorCriticAgent:
 
         # show ongoing training stats
         if (not self.episode % self.show_stats_interval) or (self.episode == self.max_episodes):
-            print(f"Episode: {self.episode}, average reward: {average_reward:.2f}, current epsilon: {self.epsilon:.2f}")
+            print(f"Episode: {self.episode}, average reward: {average_reward:.2f}")
 
         # save models
         if (not self.episode % self.save_models_interval) or (self.episode == self.max_episodes):
@@ -208,17 +212,33 @@ class ActorCriticAgent:
     def plot_training_results(self):
         fig = plt.figure(figsize=(8,8))
         fig.tight_layout(pad=0.5)
-        plt.style.use('fivethirtyeight')
+        plt.style.use('ggplot')
 
         plt.title('Actor Critic Training Progress')
+        plt.plot(np.arange(1,len(self.episode_rewards)+1), self.episode_rewards, label='eposide rewards')
         plt.plot(self.aggregate_episode_rewards['episode'], self.aggregate_episode_rewards['avg_rewards'], label="average rewards")
-        plt.plot(self.aggregate_episode_rewards['episode'], self.aggregate_episode_rewards['max_rewards'], label="max rewards")
-        plt.plot(self.aggregate_episode_rewards['episode'], self.aggregate_episode_rewards['min_rewards'], label="min rewards")
+        #plt.plot(self.aggregate_episode_rewards['episode'], self.aggregate_episode_rewards['max_rewards'], label="max rewards")
+        #plt.plot(self.aggregate_episode_rewards['episode'], self.aggregate_episode_rewards['min_rewards'], label="min rewards")
         plt.legend(loc=2)
         plt.grid(True)
         plt.xlabel('Episodes')
         plt.ylabel('Reward')
         plt.show()
+
+        if self.save_training_plot:
+            plot_name = f"training_progress_{self.model_name}.png"
+            fig.savefig(os.path.join(self.save_path, plot_name))
+
+    
+    def visualize_episode(self):
+        current_state = self.env.reset()
+        done = False
+        train = False
+        while not done:
+            #current_discrete_state = actor_critic.get_discrete_state(current_state)
+            action = self.policy_action(current_state, train)
+            current_state, reward_out, done, _ = self.env.step(action)
+            self.env.render()
 
 
     def run(self):
@@ -232,8 +252,8 @@ class ActorCriticAgent:
             train = True
         
             while not done:
-                # Get that action from the actor based on the state
-                action = self.action(state, train)
+                # Get the action based on current policy from the actor
+                action = self.policy_action(state, train)
                 #Take action, observe new state S'
                 new_state, reward, done, _ = self.env.step(action)
                 # Remember states and values
@@ -265,29 +285,19 @@ def main():
     actor_critic.plot_training_results()
 
     # watch the completed model in the environment
-    current_state = env.reset()
-    done = False
-    train = False
-    while not done:
-        #current_discrete_state = actor_critic.get_discrete_state(current_state)
-        action = actor_critic.action(current_state, train)
-        current_state, reward_out, done, _ = env.step(action)
-        env.render()      
-        
-    #env.close()
+    actor_critic.visualize_episode()
+
+
+def play_trained_model(env, path):
+    # initiate class
+    actor_critic = ActorCriticAgent(env)
+    # load trained actor and critic
+    actor_critic.load_models(path)
+    # watch the completed model in the environment
+    actor_critic.visualize_episode()
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
 
 
