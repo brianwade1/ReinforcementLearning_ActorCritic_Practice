@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import os
 import random
 import math
+from datetime import datetime
 from pathlib import Path
 
 import keras.backend as K
@@ -50,6 +51,9 @@ class ActorCriticAgent:
         self.criticStateFC2size = 24
                
         self.memory = []
+
+        self.start_time = datetime.now()
+        self.last_ep_start_time = datetime.now()
 
         # make actor and critic networks
         self.actor = self.create_actor_network()
@@ -198,8 +202,21 @@ class ActorCriticAgent:
             self.aggregate_episode_rewards['max_rewards'].append(max_reward)
 
         # show ongoing training stats
-        if (not self.episode % self.show_stats_interval) or (self.episode == self.max_episodes):
-            print(f"Episode: {self.episode}, average reward: {average_reward:.2f}")
+        if (not self.episode % self.show_stats_interval):
+            # Find time for episode
+            time_delta = datetime.now() - self.last_ep_start_time
+            delta_min = (time_delta.seconds//60)
+            delta_sec = (time_delta.seconds - delta_min * 60)%60
+            print(f"Episode: {self.episode}, average reward: {average_reward:.2f}, time to complete: {delta_min} minutes, {delta_sec} seconds")
+            self.last_ep_start_time = datetime.now()
+
+        if (self.episode == self.max_episodes):
+            time_delta = datetime.now() - self.start_time
+            delta_hour = time_delta.seconds//3600
+            delta_min = ((time_delta.seconds - (delta_hour * 3600))//60)
+            delta_sec = (time_delta.seconds - delta_hour*3600 - delta_min * 60)%60
+            print('--------- TRAINING COMPLETE -----------')
+            print(f"Episode: {self.episode}, average reward: {average_reward:.2f}, time to complete: {delta_hour} hours, {delta_min} minutes, {delta_sec} seconds")
 
         # save models
         if (not self.episode % self.save_models_interval) or (self.episode == self.max_episodes):
